@@ -187,9 +187,6 @@ class Bot:
             max_h = max(heights) if heights else 0
             rtr = row_transitions(board)
             ctr = col_transitions(board)
-            # New features: weighted column heights to capture edge-filling bias
-            # left_weighted: sum(i * h[i])  (i from 0..W-1)
-            # right_weighted: sum((W-1 - i) * h[i] for i in range(W))
             left_weighted = sum(i * heights[i] for i in range(W))
             right_weighted = sum((W - 1 - i) * heights[i] for i in range(W))
             return (agg_h, holes, bump, max_h, rtr, ctr, left_weighted, right_weighted)
@@ -205,15 +202,65 @@ class Bot:
             return -min(js), (W - 1 - max(js))
 
 
+        def can_reach(board: List[List[int]], piece: str,
+                      start_x: int, start_y: int, start_rot: int,
+                      target_rot: int, target_x: int) -> bool:
+            """
+            Simulate control: exactly one action (a/d/w) per tick, then gravity.
+            Success if the piece would LAND with (x==target_x and rot==target_rot).
+            """
+            rotations = SHAPES[piece]
+            x, y, rot = start_x, start_y, start_rot % len(rotations)
+            if collision(board, rotations[rot], x, y):
+                return False
+            MAX_TICKS = H + 16
+
+            ticks = 0
+            while ticks < MAX_TICKS:
+                ticks += 1
+                mask_now = rotations[rot]
+                mask_goal = rotations[target_rot % len(rotations)]
+
+                if x < target_x:
+                    nx = x + 1
+                    if not collision(board, mask_now, nx, y):
+                        x = nx
+                elif x > target_x:
+                    nx = x - 1
+                    if not collision(board, mask_now, nx, y):
+                        x = nx
+                else:
+                    if (rot % len(rotations)) != (target_rot % len(rotations)):
+                        if not collision(board, mask_goal, x, y):
+                            rot = target_rot % len(rotations)
+                        else:
+                            for dx in (+1, -1, +2, -2):
+                                nx = x + dx
+                                if 0 <= nx < W and not collision(board, mask_now, nx, y) and not collision(board, mask_goal, nx, y):
+                                    x = nx
+                                    rot = target_rot % len(rotations)
+                                    break
+
+                if collision(board, rotations[rot], x, y + 1):
+                    return (x == target_x) and (rot % len(rotations) == (target_rot % len(rotations)))
+                y += 1
+            return False
+
         base_board = remove_current(grid, cur.get("cells"))
         ptype = cur.get("type")
         if ptype not in SHAPES:
             return None
 
+        cur_x = int(cur.get("x", 0))
+        cur_y = int(cur.get("y", 0))
+        cur_rot = int(cur.get("rotation", 0))
+
         best = None
         for r_idx, mask in enumerate(SHAPES[ptype]):
             xmin, xmax = x_bounds(mask)
             for x in range(xmin, xmax + 1):
+                if not can_reach(base_board, ptype, cur_x, cur_y, cur_rot, r_idx, x):
+                    continue
                 y = drop_y(base_board, mask, x)
                 if y is None:
                     continue
