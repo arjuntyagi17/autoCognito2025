@@ -187,7 +187,12 @@ class Bot:
             max_h = max(heights) if heights else 0
             rtr = row_transitions(board)
             ctr = col_transitions(board)
-            return (agg_h, holes, bump, max_h, rtr, ctr)
+            # New features: weighted column heights to capture edge-filling bias
+            # left_weighted: sum(i * h[i])  (i from 0..W-1)
+            # right_weighted: sum((W-1 - i) * h[i] for i in range(W))
+            left_weighted = sum(i * heights[i] for i in range(W))
+            right_weighted = sum((W - 1 - i) * heights[i] for i in range(W))
+            return (agg_h, holes, bump, max_h, rtr, ctr, left_weighted, right_weighted)
 
 
         def score_board(board, lines_cleared):
